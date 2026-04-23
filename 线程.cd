@@ -4,7 +4,12 @@
 1> 传普通函数
 thread t(my_task,a,b);
 (函数名,函数的参数)
-2> 传lamdba函数表达式
+2>
+vector<thread> threads;
+for(int i=0;i<10;i++){
+    threads.push_back(thread(worker));
+}
+3> 传lamdba函数表达式
 thread t([捕获列表,表示外部变量此处可以修改](函数会用到的参数){
     线程要执行的函数代码
 });
@@ -38,7 +43,22 @@ cpu核心数:
 joinable()是判断,子线程现在进行完了吗,需要等待吗
 如果没有进行完,join()函数阻塞主线程,让子线程先运行
 
+4 condition_variable:
+1>存在的意义:
+想象一个场景,一个线程需要某个数据准备好才能继续工作,
+它只能不断的通过while函数检查数据是否准备就绪,
+这会持续占用cpu周期,造成巨大资源浪费
 
+在生活中,比如,你每秒刷新一次手机,看有无人发消息给你,
+这会占用你的精力,远不如消息来了通知你一下
+
+因此,condition_variable相当于消息通知
+
+2>理解用途:
+condition_variable cv;
+cv.notify_one();-->唤醒一个线程
+cv.notify_all()-->唤醒所有线程
+cv.wait(lock);-->等待其他线程结束
 
 
 
