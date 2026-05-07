@@ -1,0 +1,328 @@
+ TCP粘包拆包原因拆解:
+1. 发送数据太大，装不下 → 拆包
+你可以把 TCP 发送缓冲区 理解成一个小快递箱子。
+
+你一次性塞了超大一堆数据
+
+箱子装不下
+
+系统只能强行分成好几箱分批发货
+
+👉 对应：你发的数据 > 发送缓冲区大小 = 拆包
+
+2. 发送数据太小，系统攒一攒再发 → 粘包
+还是快递箱子：
+
+你每次只发一点点小数据
+
+箱子还空很大，直接发太浪费快递费（浪费网络资源）
+
+操作系统很聪明：先憋着不发，等你多发几次，装满箱子一起发
+
+结果：你发的 3 条消息，被合成 1 条发到对面。👉 这就是粘包
+
+3. 网络硬件有最大限制（MSS/MTU）→ 拆包
+马路有宽度限制，货车载货长度不能超标：
+
+网络里每一个「数据包」也有法定最大长度
+
+你发的数据包太长，超过网络规定上限
+
+必须切碎成小段，才能正常在路上传输
+
+简单对应：
+
+MTU：整条路最大允许的货车总长
+
+MSS：货车里能装的纯货物最大长度
+
+数据超标 → 强制切碎 → 拆包
+
+4. 接收方读数据太慢 → 粘包
+换接收端视角：
+
+对方发过来的数据，会先放到电脑的临时缓存区（仓库）
+
+你的程序如果偷懒、读数据很慢
+
+新的数据不断进来，全都堆在仓库里挤在一起
+
+等你终于来读的时候，一次性读出好几条混在一起的数据
+
+👉 前面的没拿走，后面的堆上来 = 粘包
+
+
+TCP 粘包/拆包 三种最简单解决方案:
+ 方案一：固定长度
+原理:
+
+规定每条消息固定多少字节，比如统一每条 1024 字节。
+
+优缺点:
+
+✅ 逻辑超简单，代码好写
+
+❌ 浪费流量，短消息也要占满固定长度
+
+适用情景:
+
+消息永远很短（比如验证码、指令、状态）
+
+长度永远固定（比如 4 字节数字、8 字节 ID）
+
+绝对不能用于：
+
+聊天消息
+
+长文本
+
+文件
+
+图片
+
+动态长度数据
+
+
+
+ 方案二：首尾分隔符
+原理
+
+在每条消息的末尾加特殊分隔符，比如 \n、#、&&要求：分隔符不能出现在正常业务数据里。
+
+例子
+
+两条消息：今天吃饭#明天上课#
+
+哪怕 TCP 粘包拼成：今天吃饭#明天上课#
+
+接收端不断读数据，只要读到 #，就截取前面当成一条完整消息。
+
+优缺点
+
+✅ 实现简单，文本协议（聊天、HTTP）常用
+
+❌ 二进制数据（文件、图片）不适合，容易和分隔符冲突
+
+
+
+为什么二进制数据不可以呢?
+
+二进制文件是纯机器编码，没有 “冷门” 一说，
+
+任何单字节、多字节组合，都有概率天然出现在文件内容里。
+
+
+
+ 方案三：消息头 + 数据长度
+原理:
+
+每条数据分为两部分：
+
+消息头（固定字节）：存「后面数据的长度」
+
+消息体：真实要发送的数据
+
+流程:
+
+发送
+
+先计算消息体有多少字节
+
+把「长度」写到数据包开头
+
+长度 + 真实数据 一起发出去
+
+接收
+
+第一步：先读取固定长度的消息头，解析出「本次消息有多长」
+
+第二步：根据长度，精准读取对应字节的消息体
+
+读完一条，再循环取下一条
+
+例子
+
+要发数据：hello world假设用 4 字节存长度：
+
+数据长度：11
+
+发送内容：[长度11] + hello world
+
+接收：先读 4 字节 →
+​
+string recvMsg(int fd){
+
+//1读取长度头
+
+int netlen=0;
+
+int ret=recv(fd,&netlen,HEADER_LEN,0);
+
+if(ret<=0) return "";
+
+//2转回本机字节序
+
+int datalen=ntohl(ret);
+
+//3按需读取完整数据
+
+char buf[1024]={0};
+
+recv(fd,buf,datalen,0);
+
+return string(buf);
+
+}
+
+​
+知道要收 11 个字节 → 精准只读 11 字节，完美拆分。
+
+优缺点
+
+✅ 不浪费流量、二进制 / 文本都能用、工业级标准方案
+
+❌ 比前两种多一点点代码，但是最通用
+
+
+
+
+
+ 代码实现简单socket功能
+程序1:attempt_client.cpp
+
+程序2:attempt_server.cpp
+
+g++ attempt_server.cpp -o attempt_server
+
+g++ attempt_client.cpp -o attempt_client
+
+
+
+先跑服务端
+
+./attempt_server
+
+再开一个窗口跑客户端
+
+./attempt_client
+
+attempt_client.cpp
+​
+#include <bits/stdc++.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+using namespace std;
+const int HEADER_LEN=4;
+void sendMsg(int fd,string& msg){
+    //1获取数据长度
+    int len=msg.size();
+    //2先发固定的4个字节长度(网络字节序)
+    int netLen=htonl(len);
+    send(fd, &netLen, HEADER_LEN, 0);
+    //3发数据
+    send(fd,msg.c_str(),len,0);
+
+    return;
+}
+string recvMsg(int fd){
+    //1读取长度头
+    int netlen=0;
+    int ret=recv(fd,&netlen,HEADER_LEN,0);
+    if(ret<=0) return "";
+    //2转回本机字节序
+    int datalen=ntohl(ret);
+    //3按需读取完整数据
+    char buf[1024]={0};
+    recv(fd,buf,datalen,0);
+    
+    return string(buf);
+}
+int main(){
+    //1创建socket
+    int clientFd=socket(AF_INET,SOCK_STREAM,0);
+    //2连接服务端 127.0.0.1:8888
+    sockaddr_in serAddr;                // ① 创建一个“地址信息”变量
+    serAddr.sin_family = AF_INET;        // ② 用IPv4地址（固定写法）
+    serAddr.sin_port = htons(8888);      // ③ 端口号：8888
+    serAddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // ④ IP：本机
+
+    connect(clientFd, (sockaddr*)&serAddr, sizeof(serAddr)); // ⑤ 发起连接
+
+    cout<<"连接服务端成功"<<endl;
+
+    string input;
+    while(1){
+        cout<<"请输入信息"<<endl;
+        getline(cin,input);
+
+        sendMsg(clientFd,input);//发
+        string res=recvMsg(clientFd);
+        cout<<"服务端回复"<<res<<endl;
+    }
+    close(clientFd);
+    return 0;
+}
+
+​
+attempt_server.cpp
+
+​
+#include <bits/stdc++.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+using namespace std;
+const int HEADER_LEN=4;
+void sendMsg(int fd,const string& msg){
+    //1获取数据长度
+    int len=msg.size();
+    //2先发固定的4个字节长度(网络字节序)
+    int netLen=htonl(len);
+    send(fd,&netLen,HEADER_LEN,0);
+    //3发数据
+    send(fd,msg.c_str(),len,0);
+    
+    return ;
+}
+string recvMsg(int fd){
+    //1读取长度头
+    int netlen=0;
+    int ret=recv(fd,&netlen,HEADER_LEN,0);
+    if(ret<=0) return "";
+    //2转回本机字节序
+    int datalen=ntohl(ret);
+    //3按需读取完整数据
+    char buf[1024]={0};
+    recv(fd,buf,datalen,0);
+    
+    return string(buf);
+}
+int main(){
+    //1创建socket
+    int listenFd=socket(AF_INET,SOCK_STREAM,0);
+    //
+    sockaddr_in serAddr;
+    serAddr.sin_family = AF_INET;
+    serAddr.sin_port = htons(8888);
+    serAddr.sin_addr.s_addr = INADDR_ANY;
+    //3 bind绑定
+    bind(listenFd,(sockaddr*)&serAddr,sizeof(serAddr));
+    //4 listen监听
+    listen(listenFd, 5);  // 最多排队5个连接
+    cout << "服务端启动，监听8888...\n";
+    //5 accept等待客户端连接
+    int connFd=accept(listenFd,NULL,NULL);
+
+    while(1){
+        string res=recvMsg(connFd);
+        cout<<"收到客户端消息:"<<res<<endl;
+        sendMsg(connFd, "已收到：" + res);
+    }
+    close(connFd);
+    close(listenFd);
+    return 0;
+}
+
+​
+
