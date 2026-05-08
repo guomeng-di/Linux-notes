@@ -1,6 +1,6 @@
 FTP协议:
-Transmission Control Protocol 
-：传输控制协议
+File Transfer Protocol
+中文：文件传输协议
 ## 1它是干嘛的
 用来在两台电脑之间传文件的协议,可简单理解为两台电脑间的文件搬运工
 ## 2它是如何实现的
