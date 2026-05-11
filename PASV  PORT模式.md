@@ -1,6 +1,6 @@
 # PORT vs PASV
 
-PORT:positive主动模式 服务器 连 客户端的数据端口
+PORT:Data Port Command  主动模式 服务器 连 客户端的数据端口
 
 PASV:passive 被动模式 客户端 连 服务器的数据端口
 
