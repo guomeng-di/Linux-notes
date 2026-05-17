@@ -196,3 +196,17 @@ FTP协议：收到USER后，回复331要求输入密码
 5>循环读取文件,写入缓冲区
 
 ## QUIT断开连接
+
+客户端  对应  服务器  
+
+ ls          LIST
+ 
+ get         RETR
+ 
+ put         STOR
+ 
+ quit        QUIT
+
+ 用户敲ls → 经ftp协议 -> 客户端翻译成 LIST → 服务器收到并处理 LIST
+
+ 
